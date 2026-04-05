@@ -418,7 +418,7 @@ login_passiveagents() {
   say "You need to log in to PassiveAgents with your email."
   if ! confirm "Log in to PassiveAgents now?"; then
     say "You can log in later with: passiveagents login"
-    return
+    return 1
   fi
 
   passiveagents login
@@ -495,11 +495,11 @@ main() {
   fi
   setup_allowlisted_folders
 
-  login_passiveagents
-  start_passiveagents
-
-  say "Done!"
-  source "$profile"
+  if login_passiveagents; then
+    start_passiveagents
+    say "Done!"
+    source "$profile"
+  fi
 }
 
 main "$@"
