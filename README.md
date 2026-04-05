@@ -14,4 +14,4 @@ To install the PassiveAgents manager on your machine, run:
 
 ```bash
 brew tap karthikp32/passiveagents
-brew install passive-agents
+brew install passiveagents
