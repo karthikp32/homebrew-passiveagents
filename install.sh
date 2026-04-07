@@ -152,85 +152,7 @@ run_with_optional_sudo() {
   sudo "$@"
 }
 
-ensure_nodejs() {
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    return 0
-  fi
 
-  say "At least one coding agent needs Node.js and npm."
-  if ! confirm "Install Node.js now?"; then
-    say "Skipping coding-agent downloads because Node.js was not approved."
-    return 1
-  fi
-
-  local os
-  os="$(uname -s)"
-  case "$os" in
-    Darwin)
-      if command -v brew >/dev/null 2>&1; then
-        brew install node
-      else
-        say "Homebrew not found. Install Node.js manually from https://nodejs.org/ and rerun setup."
-        return 1
-      fi
-      ;;
-    Linux)
-      if command -v apt-get >/dev/null 2>&1; then
-        if ! is_root_or_has_sudo; then
-          say "Skipping Node.js install because elevated privileges are unavailable."
-          return 1
-        fi
-        run_with_optional_sudo apt-get update
-        run_with_optional_sudo apt-get install -y nodejs npm
-      elif command -v dnf >/dev/null 2>&1; then
-        if ! is_root_or_has_sudo; then
-          say "Skipping Node.js install because elevated privileges are unavailable."
-          return 1
-        fi
-        run_with_optional_sudo dnf install -y nodejs npm
-      elif command -v pacman >/dev/null 2>&1; then
-        if ! is_root_or_has_sudo; then
-          say "Skipping Node.js install because elevated privileges are unavailable."
-          return 1
-        fi
-        run_with_optional_sudo pacman -Sy --noconfirm nodejs npm
-      else
-        say "No supported package manager found. Install Node.js manually from https://nodejs.org/."
-        return 1
-      fi
-      ;;
-    *)
-      say "Unsupported OS for automatic Node.js installation: ${os}."
-      return 1
-      ;;
-  esac
-
-  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-    say "Node.js installation did not complete successfully."
-    return 1
-  fi
-
-  say "Installed Node.js and npm."
-}
-
-offer_agent_login() {
-  local label="$1"
-  local login_command="$2"
-  local instructions="$3"
-
-  say "${label} login command: ${login_command}"
-  say "${instructions}"
-  if ! confirm "Launch ${label} login now?"; then
-    say "You can log in later with: ${login_command}"
-    return
-  fi
-
-  if bash -c '. "${HOME}/.bashrc" 2>/dev/null; . "${HOME}/.profile" 2>/dev/null; '"$login_command"; then
-    say "${label} login flow finished."
-  else
-    say "${label} login command exited before completing. Retry later with: ${login_command}"
-  fi
-}
 
 verify_install() {
   local label="$1"
@@ -244,14 +166,22 @@ verify_install() {
 
 install_claude_code() {
   local label="Claude Code"
-  local login_command="claude"
-  local instructions="Claude Code opens its login/auth flow from the CLI session."
+  local installed=0
 
   say "Installing ${label}..."
-  if bash -c "$(curl -fsSL https://claude.ai/install.sh)"; then
+  if command -v npm >/dev/null 2>&1; then
+    if npm install -g @anthropic-ai/claude-code; then
+      installed=1
+    fi
+  else
+    if curl -fsSL https://claude.ai/install.sh | bash; then
+      installed=1
+    fi
+  fi
+
+  if (( installed )); then
     say "Installed ${label}."
     verify_install "$label" "claude"
-    offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://code.claude.com/"
   fi
@@ -259,24 +189,22 @@ install_claude_code() {
 
 install_codex() {
   local label="Codex"
-  local login_command="codex login"
-  local instructions="Codex starts the ChatGPT or API-key sign-in flow with the explicit login command."
+  local installed=0
 
   say "Installing ${label}..."
-  if command -v brew >/dev/null 2>&1 && [[ "$(uname -s)" == "Darwin" ]]; then
+  if command -v npm >/dev/null 2>&1; then
+    if npm i -g @openai/codex; then
+      installed=1
+    fi
+  else
     if brew install --cask codex; then
-      say "Installed ${label}."
-      verify_install "$label" "codex"
-      offer_agent_login "$label" "$login_command" "$instructions"
-      return 0
+      installed=1
     fi
   fi
 
-  # Fallback to npm
-  if ensure_nodejs && npm install -g @openai/codex; then
+  if (( installed )); then
     say "Installed ${label}."
     verify_install "$label" "codex"
-    offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://developers.openai.com/codex/cli"
   fi
@@ -284,24 +212,22 @@ install_codex() {
 
 install_gemini_cli() {
   local label="Gemini CLI"
-  local login_command="gemini"
-  local instructions="Gemini CLI lets you choose Google sign-in or API-key auth when it launches. After completing login, exit Gemini (type /exit or press Ctrl+C) to continue setup."
+  local installed=0
 
   say "Installing ${label}..."
-  if command -v brew >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
+    if npm install -g @google/gemini-cli; then
+      installed=1
+    fi
+  else
     if brew install gemini-cli; then
-      say "Installed ${label}."
-      verify_install "$label" "gemini"
-      offer_agent_login "$label" "$login_command" "$instructions"
-      return 0
+      installed=1
     fi
   fi
 
-  # Fallback to npm
-  if ensure_nodejs && npm install -g @google/gemini-cli; then
+  if (( installed )); then
     say "Installed ${label}."
     verify_install "$label" "gemini"
-    offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://github.com/google-gemini/gemini-cli"
   fi
@@ -309,23 +235,24 @@ install_gemini_cli() {
 
 install_opencode() {
   local label="OpenCode"
-  local login_command="opencode auth login"
-  local instructions="OpenCode starts its auth flow with the dedicated auth login command."
+  local installed=0
 
   say "Installing ${label}..."
-  if bash -c "$(curl -fsSL https://opencode.ai/install)"; then
+  if command -v npm >/dev/null 2>&1; then
+    if npm i -g opencode-ai; then
+      installed=1
+    fi
+  else
+    if curl -fsSL https://opencode.ai/install | bash; then
+      installed=1
+    fi
+  fi
+
+  if (( installed )); then
     say "Installed ${label}."
     verify_install "$label" "opencode"
-    offer_agent_login "$label" "$login_command" "$instructions"
   else
-    # Fallback to npm
-    if ensure_nodejs && npm install -g @opencode/cli; then
-      say "Installed ${label}."
-      verify_install "$label" "opencode"
-      offer_agent_login "$label" "$login_command" "$instructions"
-    else
-      say "Failed to install ${label}. You can install manually from https://opencode.ai/"
-    fi
+    say "Failed to install ${label}. You can install manually from https://opencode.ai/"
   fi
 }
 
