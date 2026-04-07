@@ -38,65 +38,110 @@ is_root_or_has_sudo() {
 }
 
 ensure_homebrew() {
-    if command -v brew >/dev/null 2>&1; then
-      say "Homebrew is already installed."
-      return 0
+  local os
+  local bp=""
+  local brew_paths=("/opt/homebrew/bin/brew" "/usr/local/bin/brew" "/home/linuxbrew/.linuxbrew/bin/brew")
+
+  for candidate in "${brew_paths[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      bp="$candidate"
+      eval "$("$bp" shellenv)"
+      break
     fi
+  done
 
-    local os
-    os="$(uname -s)"
-    if [[ "$os" != "Darwin" && "$os" != "Linux" ]]; then
-      say "Homebrew installation is not supported on ${os}."
-      return 1
-    fi
+  if command -v brew >/dev/null 2>&1; then
+    say "Homebrew is already installed."
+    return 0
+  fi
 
-    say "Homebrew is required for PassiveAgents installation."
-    if ! confirm "Install Homebrew now?"; then
-      say "Homebrew is required. Please install from https://brew.sh and rerun this script."
-      return 1
-    fi
-
-    say "Installing Homebrew..."
-    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-      say "Installed Homebrew."
-
-      # Ensure Homebrew is in PATH for this session and future sessions
-      if [[ "$os" == "Linux" ]]; then
-        local homebrew_init
-        homebrew_init="$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-        eval "$homebrew_init"
-
-        # Add to shell profiles so it persists
-        local profile
-        for profile in ~/.bashrc ~/.zshrc ~/.bash_profile; do
-          if [[ -f "$profile" ]]; then
-            if ! grep -q "Homebrew initialization" "$profile" 2>/dev/null; then
-              printf '\n# Homebrew initialization\neval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"\n' >>"$profile"
-            fi
-          fi
-        done
-      fi
-      return 0
-    else
-      say "Homebrew installation failed. Visit https://brew.sh for manual installation."
-      return 1
-    fi
-  }
-
-install_passiveagents() {
-  say "Installing PassiveAgents via Homebrew..."
-  if brew tap karthikp32/passiveagents; then
-    if brew install passiveagents; then
-      say "Installed PassiveAgents."
-      return 0
-    else
-      say "Failed to install passiveagents via brew. Check your internet connection and try again."
-      return 1
-    fi
-  else
-    say "Failed to tap the PassiveAgents Homebrew repository."
+  os="$(uname -s)"
+  if [[ "$os" != "Darwin" && "$os" != "Linux" ]]; then
+    say "Homebrew installation is not supported on ${os}."
     return 1
   fi
+
+  say "Homebrew is required for PassiveAgents installation."
+  if ! confirm "Install Homebrew now?"; then
+    say "Homebrew is required. Please install from https://brew.sh and rerun this script."
+    return 1
+  fi
+
+  say "Installing Homebrew..."
+  if ! /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+    say "Homebrew installation failed. Visit https://brew.sh for manual installation."
+    return 1
+  fi
+
+  bp=""
+  for candidate in "${brew_paths[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      bp="$candidate"
+      eval "$("$bp" shellenv)"
+      break
+    fi
+  done
+
+  if ! command -v brew >/dev/null 2>&1; then
+    say "Homebrew installed, but could not be loaded into this shell."
+    return 1
+  fi
+
+  if [[ "$os" == "Linux" && -n "$bp" ]]; then
+    local line
+    line="eval \"\$($bp shellenv)\""
+    local profile
+
+    for profile in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      touch "$profile"
+      if ! grep -Fq "$line" "$profile"; then
+        printf '\n# Homebrew initialization\n%s\n' "$line" >> "$profile"
+      fi
+    done
+  fi
+
+  say "Installed Homebrew."
+  return 0
+}
+
+install_passiveagents() {
+  local formula="passiveagents"
+
+  if passiveagents --version >/dev/null 2>&1; then
+    say "PassiveAgents is already installed."
+    if ! confirm "Upgrade via Homebrew?"; then
+      say "Skipping upgrade."
+      return 0
+    fi
+  fi
+
+  say "Setting up PassiveAgents via Homebrew..."
+
+  brew update || {
+    say "Failed to update Homebrew."
+    return 1
+  }
+
+  brew tap karthikp32/passiveagents || {
+    say "Failed to tap repository."
+    return 1
+  }
+
+  if brew list --formula "$formula" >/dev/null 2>&1; then
+    say "Upgrading PassiveAgents..."
+    brew upgrade "$formula" || {
+      say "Upgrade failed."
+      return 1
+    }
+  else
+    say "Installing PassiveAgents..."
+    brew install "$formula" || {
+      say "Installation failed."
+      return 1
+    }
+  fi
+
+  say "PassiveAgents is now installed."
 }
 
 run_with_optional_sudo() {
@@ -180,10 +225,20 @@ offer_agent_login() {
     return
   fi
 
-  if bash -lc "$login_command"; then
+  if bash -c '. "${HOME}/.bashrc" 2>/dev/null; . "${HOME}/.profile" 2>/dev/null; '"$login_command"; then
     say "${label} login flow finished."
   else
     say "${label} login command exited before completing. Retry later with: ${login_command}"
+  fi
+}
+
+verify_install() {
+  local label="$1"
+  local cmd="$2"
+  if bash -c '. "${HOME}/.bashrc" 2>/dev/null; . "${HOME}/.profile" 2>/dev/null; '"$cmd --version" >/dev/null 2>&1; then
+    say "${label} verified."
+  else
+    say "Warning: ${label} installed but '${cmd}' not found in PATH. Open a new terminal before logging in."
   fi
 }
 
@@ -195,6 +250,7 @@ install_claude_code() {
   say "Installing ${label}..."
   if bash -c "$(curl -fsSL https://claude.ai/install.sh)"; then
     say "Installed ${label}."
+    verify_install "$label" "claude"
     offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://code.claude.com/"
@@ -203,13 +259,14 @@ install_claude_code() {
 
 install_codex() {
   local label="Codex"
-  local login_command="codex --login"
+  local login_command="codex login"
   local instructions="Codex starts the ChatGPT or API-key sign-in flow with the explicit login command."
 
   say "Installing ${label}..."
   if command -v brew >/dev/null 2>&1 && [[ "$(uname -s)" == "Darwin" ]]; then
-    if brew install openai-codex; then
+    if brew install --cask codex; then
       say "Installed ${label}."
+      verify_install "$label" "codex"
       offer_agent_login "$label" "$login_command" "$instructions"
       return 0
     fi
@@ -218,6 +275,7 @@ install_codex() {
   # Fallback to npm
   if ensure_nodejs && npm install -g @openai/codex; then
     say "Installed ${label}."
+    verify_install "$label" "codex"
     offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://developers.openai.com/codex/cli"
@@ -227,12 +285,13 @@ install_codex() {
 install_gemini_cli() {
   local label="Gemini CLI"
   local login_command="gemini"
-  local instructions="Gemini CLI lets you choose Google sign-in or API-key auth when it launches."
+  local instructions="Gemini CLI lets you choose Google sign-in or API-key auth when it launches. After completing login, exit Gemini (type /exit or press Ctrl+C) to continue setup."
 
   say "Installing ${label}..."
   if command -v brew >/dev/null 2>&1; then
     if brew install gemini-cli; then
       say "Installed ${label}."
+      verify_install "$label" "gemini"
       offer_agent_login "$label" "$login_command" "$instructions"
       return 0
     fi
@@ -241,6 +300,7 @@ install_gemini_cli() {
   # Fallback to npm
   if ensure_nodejs && npm install -g @google/gemini-cli; then
     say "Installed ${label}."
+    verify_install "$label" "gemini"
     offer_agent_login "$label" "$login_command" "$instructions"
   else
     say "Failed to install ${label}. You can install manually from https://github.com/google-gemini/gemini-cli"
@@ -255,11 +315,13 @@ install_opencode() {
   say "Installing ${label}..."
   if bash -c "$(curl -fsSL https://opencode.ai/install)"; then
     say "Installed ${label}."
+    verify_install "$label" "opencode"
     offer_agent_login "$label" "$login_command" "$instructions"
   else
     # Fallback to npm
     if ensure_nodejs && npm install -g @opencode/cli; then
       say "Installed ${label}."
+      verify_install "$label" "opencode"
       offer_agent_login "$label" "$login_command" "$instructions"
     else
       say "Failed to install ${label}. You can install manually from https://opencode.ai/"
@@ -288,26 +350,11 @@ upsert_env_line() {
   fi
 }
 
-setup_api_key() {
-  local key="$1"
-  local profile="$2"
-  if confirm "Configure ${key} now?"; then
-    read -r -s -p "Enter ${key}: " value
-    echo
-    if [[ -n "${value}" ]]; then
-      upsert_env_line "$profile" "$key" "$value"
-      say "Saved ${key} to ${profile}."
-    else
-      say "No value entered; skipped ${key}."
-    fi
-  fi
-}
-
 install_cloudflared() {
   say "Cloudflare Tunnel is required for PassiveAgents remote access."
   say "This setup will install cloudflared if it is not already available."
 
-  if command -v cloudflared >/dev/null 2>&1; then
+  if cloudflared --version >/dev/null 2>&1; then
     say "cloudflared is already installed."
     return
   fi
@@ -395,13 +442,13 @@ setup_allowlisted_folders() {
 
     read -r -p "Optional label: " folder_label
     if [[ -n "${folder_label:-}" ]]; then
-      if passiveagents folders add "$folder_path" --label "$folder_label"; then
+      if passiveagents add folder "$folder_path" --label "$folder_label"; then
         say "Added allowlisted folder ${folder_label}."
       else
         say "Failed to add allowlisted folder ${folder_path}."
       fi
     else
-      if passiveagents folders add "$folder_path"; then
+      if passiveagents add folder "$folder_path"; then
         say "Added allowlisted folder ${folder_path}."
       else
         say "Failed to add allowlisted folder ${folder_path}."
@@ -428,7 +475,7 @@ start_passiveagents() {
   say "PassiveAgents is now ready to start."
   if ! confirm "Start PassiveAgents manager now?"; then
     say "You can start it later with: passiveagents start"
-    return
+    return 1
   fi
 
   passiveagents start
@@ -448,25 +495,36 @@ main() {
     return 1
   fi
 
-  say "Atleast one coding agent tool is required. cloudflared is required for remote access."
-
-  local profile="${HOME}/.bashrc"
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    profile="${HOME}/.bash_profile"
-  fi
-  if [[ -n "${ZSH_VERSION:-}" ]] || [[ "${SHELL:-}" == *"zsh"* ]]; then
-    profile="${HOME}/.zshrc"
-  fi
+  say "At least one coding agent tool is required. cloudflared is required for remote access."
 
   local install_claude=0
   local install_codex=0
   local install_gemini=0
   local install_opencode=0
 
-  confirm "Install Claude Code on this machine?" && install_claude=1
-  confirm "Install Codex on this machine?" && install_codex=1
-  confirm "Install Gemini CLI on this machine?" && install_gemini=1
-  confirm "Install OpenCode on this machine?" && install_opencode=1
+  if claude --version >/dev/null 2>&1; then
+    say "Claude Code is already installed."
+  else
+    confirm "Install Claude Code on this machine?" && install_claude=1
+  fi
+
+  if codex --version >/dev/null 2>&1; then
+    say "Codex is already installed."
+  else
+    confirm "Install Codex on this machine?" && install_codex=1
+  fi
+
+  if gemini --version >/dev/null 2>&1; then
+    say "Gemini CLI is already installed."
+  else
+    confirm "Install Gemini CLI on this machine?" && install_gemini=1
+  fi
+
+  if opencode --version >/dev/null 2>&1; then
+    say "OpenCode is already installed."
+  else
+    confirm "Install OpenCode on this machine?" && install_opencode=1
+  fi
 
   if (( install_claude || install_codex || install_gemini || install_opencode )); then
     if (( install_claude )); then
@@ -485,20 +543,30 @@ main() {
     say "Skipped all optional coding-agent installs."
   fi
 
-  setup_api_key "ANTHROPIC_API_KEY" "$profile"
-  setup_api_key "OPENAI_API_KEY" "$profile"
-  setup_api_key "GEMINI_API_KEY" "$profile"
-  setup_api_key "OPENROUTER_API_KEY" "$profile"
-
   if ! install_cloudflared; then
     say "Skipping remote-access setup because cloudflared could not be installed automatically."
   fi
-  setup_allowlisted_folders
 
-  if login_passiveagents; then
-    start_passiveagents
+  if login_passiveagents && start_passiveagents; then
+    setup_allowlisted_folders
     say "Done!"
-    source "$profile"
+  fi
+
+  if (( install_claude || install_codex || install_gemini || install_opencode )); then
+    say ""
+    say "To log in to your coding agents, open a new terminal and run:"
+    if (( install_claude )); then
+      say "  Claude Code:  Run claude command in terminal and then run /login"
+    fi
+    if (( install_codex )); then
+      say "  Codex:        codex login"
+    fi
+    if (( install_gemini )); then
+      say "  Gemini CLI:   Run gemini command in terminal and then run /auth"
+    fi
+    if (( install_opencode )); then
+      say "  OpenCode:     opencode auth login"
+    fi
   fi
 }
 
