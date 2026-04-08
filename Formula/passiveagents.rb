@@ -1,26 +1,26 @@
 class Passiveagents < Formula
   desc "PassiveAgents local agent manager"
   homepage "https://passiveagents.com"
-  version "1.0.0-beta.4"
+  version "1.0.0-beta.5"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.4/passiveagents_Darwin_arm64.tar.gz"
-      sha256 "7d97f892a6a96b5d223ebba9f766df727a5ef348ca8c2c97c7adde10bf7261cb"
+      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.5/passiveagents_Darwin_arm64.tar.gz"
+      sha256 "d94062a234749053f0ecc42287770ad1e948ae060c1d09e65c56ecf236a9373f"
     else
-      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.4/passiveagents_Darwin_amd64.tar.gz"
-      sha256 "d1b89e381ea0ca96a46b554fdee93120fe3860b234758566a09a9f8592a24d14"
+      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.5/passiveagents_Darwin_amd64.tar.gz"
+      sha256 "bb3b7d3fed8311cbb0f734ffd94b8b2cd4e886710b53aa0516a69df6bb563f3a"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.4/passiveagents_Linux_arm64.tar.gz"
-      sha256 "adcece0bac450b8a292c2a62815c4ee143d0d961c3ca4655124dec607e183713"
+      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.5/passiveagents_Linux_arm64.tar.gz"
+      sha256 "ab09e4c0d4bdecc80695ac42abf5dcb326fcaad51b14f322e39ec197d787cc58"
     else
-      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.4/passiveagents_Linux_amd64.tar.gz"
-      sha256 "8278615ad8c9a971484a1be43142a4049fbf6569cae488d94e4041380bbcf9e3"
+      url "https://github.com/karthikp32/homebrew-passiveagents/releases/download/manager-v1.0.0-beta.5/passiveagents_Linux_amd64.tar.gz"
+      sha256 "cb2fa88cc5516cac16878f47c95d43f7993d0926167a1ce9a50b46ec6899406a"
     end
   end
 
