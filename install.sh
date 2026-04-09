@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PA_CLAUDE_PKG="${PA_CLAUDE_PKG:-@anthropic-ai/claude-code}"
-PA_CODEX_PKG="${PA_CODEX_PKG:-@openai/codex}"
-PA_GEMINI_PKG="${PA_GEMINI_PKG:-@google/gemini-cli}"
-PA_OPENCODE_PKG="${PA_OPENCODE_PKG:-opencode-ai}"
+NPM_CLAUDE_PKG="${NPM_CLAUDE_PKG:-@anthropic-ai/claude-code}"
+NPM_CODEX_PKG="${NPM_CODEX_PKG:-@openai/codex}"
+NPM_GEMINI_PKG="${NPM_GEMINI_PKG:-@google/gemini-cli}"
+NPM_OPENCODE_PKG="${NPM_OPENCODE_PKG:-opencode-ai}"
 
 say() {
   printf "%s\n" "$*"
@@ -35,6 +35,10 @@ is_root_or_has_sudo() {
     return 0
   fi
   command -v sudo >/dev/null 2>&1
+}
+
+has_interactive_tty() {
+  [[ -t 0 && -t 1 ]]
 }
 
 ensure_homebrew() {
@@ -105,8 +109,6 @@ ensure_homebrew() {
 }
 
 install_passiveagents() {
-  local formula="passiveagents"
-
   if passiveagents --version >/dev/null 2>&1; then
     say "PassiveAgents is already installed."
     if ! confirm "Upgrade via Homebrew?"; then
@@ -127,15 +129,15 @@ install_passiveagents() {
     return 1
   }
 
-  if brew list --formula "$formula" >/dev/null 2>&1; then
+  if brew list --formula passiveagents >/dev/null 2>&1; then
     say "Upgrading PassiveAgents..."
-    brew upgrade "$formula" || {
+    brew upgrade passiveagents || {
       say "Upgrade failed."
       return 1
     }
   else
     say "Installing PassiveAgents..."
-    brew install "$formula" || {
+    brew install passiveagents || {
       say "Installation failed."
       return 1
     }
@@ -152,8 +154,6 @@ run_with_optional_sudo() {
   sudo "$@"
 }
 
-
-
 verify_install() {
   local label="$1"
   local cmd="$2"
@@ -169,7 +169,9 @@ install_claude_code() {
   local installed=0
 
   say "Installing ${label}..."
-  if command -v npm >/dev/null 2>&1; then
+  if brew install --cask claude-code 2>/dev/null; then
+    installed=1
+  elif command -v npm >/dev/null 2>&1; then
     if npm install -g @anthropic-ai/claude-code; then
       installed=1
     fi
@@ -192,12 +194,10 @@ install_codex() {
   local installed=0
 
   say "Installing ${label}..."
-  if command -v npm >/dev/null 2>&1; then
+  if brew install --cask codex; then
+    installed=1
+  elif command -v npm >/dev/null 2>&1; then
     if npm i -g @openai/codex; then
-      installed=1
-    fi
-  else
-    if brew install --cask codex; then
       installed=1
     fi
   fi
@@ -215,12 +215,10 @@ install_gemini_cli() {
   local installed=0
 
   say "Installing ${label}..."
-  if command -v npm >/dev/null 2>&1; then
+  if brew install gemini-cli; then
+    installed=1
+  elif command -v npm >/dev/null 2>&1; then
     if npm install -g @google/gemini-cli; then
-      installed=1
-    fi
-  else
-    if brew install gemini-cli; then
       installed=1
     fi
   fi
@@ -238,7 +236,9 @@ install_opencode() {
   local installed=0
 
   say "Installing ${label}..."
-  if command -v npm >/dev/null 2>&1; then
+  if brew install opencode-ai 2>/dev/null; then
+    installed=1
+  elif command -v npm >/dev/null 2>&1; then
     if npm i -g opencode-ai; then
       installed=1
     fi
@@ -388,6 +388,97 @@ setup_allowlisted_folders() {
   done
 }
 
+login_claude_code() {
+  if ! command -v claude >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! has_interactive_tty; then
+    say "Skipping Claude Code login because this shell is not interactive."
+    say "Log in later by running: claude"
+    say "Then type: /login"
+    return 0
+  fi
+
+  say "Claude Code login is interactive."
+  say "The installer will continue even if you skip or interrupt it."
+  if confirm "Launch Claude Code login now?"; then
+    say "Launching Claude Code. Type /login once it starts."
+    if ! claude; then
+      say "Claude Code login was interrupted or did not complete."
+    fi
+  else
+    say "You can log in later by running: claude"
+    say "Then type: /login"
+  fi
+}
+
+login_codex() {
+  if ! command -v codex >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! has_interactive_tty; then
+    say "Skipping Codex login because this shell is not interactive."
+    say "Log in later by running: codex login"
+    return 0
+  fi
+
+  say "Codex login is interactive and may open a browser-based auth flow."
+  say "The installer will continue even if you skip or interrupt it."
+  if confirm "Log in to Codex now?"; then
+    say "Starting Codex login..."
+    if ! codex login --device-auth; then
+      say "Codex login was interrupted or did not complete."
+    fi
+  else
+    say "You can log in later with: codex login"
+  fi
+}
+
+login_gemini_cli() {
+  if ! command -v gemini >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! has_interactive_tty; then
+    say "Skipping Gemini CLI login because this shell is not interactive."
+    say "Log in later by running: gemini"
+    return 0
+  fi
+
+  say "Gemini CLI login is interactive and may open a browser-based auth flow."
+  say "If it does not behave well in this environment, press Ctrl+C and log in later."
+  if confirm "Launch Gemini CLI login now?"; then
+    say "Starting Gemini CLI..."
+    if ! gemini; then
+      say "Gemini CLI login was interrupted or did not complete."
+    fi
+  else
+    say "You can log in later by running: gemini"
+  fi
+}
+
+login_opencode() {
+  if ! command -v opencode >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! has_interactive_tty; then
+    say "Skipping OpenCode login because this shell is not interactive."
+    say "Log in later with: opencode auth login"
+    return 0
+  fi
+
+  if confirm "Log in to OpenCode now?"; then
+    if ! opencode auth login; then
+      say "OpenCode login was interrupted or did not complete."
+    fi
+  else
+    say "You can log in later with: opencode auth login"
+  fi
+}
+
 login_passiveagents() {
   say "You need to log in to PassiveAgents with your email."
   if ! confirm "Log in to PassiveAgents now?"; then
@@ -395,7 +486,10 @@ login_passiveagents() {
     return 1
   fi
 
-  passiveagents login
+  if ! passiveagents login; then
+    say "PassiveAgents login was interrupted or did not complete."
+    return 1
+  fi
 }
 
 start_passiveagents() {
@@ -405,13 +499,61 @@ start_passiveagents() {
     return 1
   fi
 
-  passiveagents start
+  if ! passiveagents start; then
+    say "PassiveAgents manager start did not complete."
+    return 1
+  fi
+}
+
+print_next_steps() {
+  local login_ok="${1:-0}"
+  local start_ok="${2:-0}"
+
+  say ""
+  say "Setup summary:"
+
+  say ""
+  say "  Installed:"
+  command -v passiveagents >/dev/null 2>&1 && say "    - PassiveAgents"
+  command -v cloudflared   >/dev/null 2>&1 && say "    - cloudflared"
+  command -v claude        >/dev/null 2>&1 && say "    - Claude Code"
+  command -v codex         >/dev/null 2>&1 && say "    - Codex"
+  command -v gemini        >/dev/null 2>&1 && say "    - Gemini CLI"
+  command -v opencode      >/dev/null 2>&1 && say "    - OpenCode"
+
+  say ""
+  if (( login_ok )); then
+    say "  PassiveAgents login: logged in"
+  else
+    say "  PassiveAgents login: not completed — run: passiveagents login"
+  fi
+  if (( start_ok )); then
+    say "  Manager status:      running"
+  else
+    say "  Manager status:      not started — run: passiveagents start"
+  fi
+
+  say ""
+  say "  Next steps:"
+  if command -v claude >/dev/null 2>&1; then
+    say "    - Log in to Claude Code:  run ‘claude’, then type /login"
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    say "    - Log in to Codex:        codex login  (use ‘--device-auth’ if it doesn’t work)"
+  fi
+  if command -v gemini >/dev/null 2>&1; then
+    say "    - Log in to Gemini CLI:   run ‘gemini’, choose ‘Sign in with Google’"
+  fi
+  if command -v opencode >/dev/null 2>&1; then
+    say "    - Log in to OpenCode:     opencode auth login"
+  fi
+
+  say ""
 }
 
 main() {
   say "Starting PassiveAgents setup (macOS/Linux)."
 
-  # Install Homebrew and PassiveAgents first
   if ! ensure_homebrew; then
     say "Cannot continue without Homebrew."
     return 1
@@ -454,18 +596,10 @@ main() {
   fi
 
   if (( install_claude || install_codex || install_gemini || install_opencode )); then
-    if (( install_claude )); then
-      install_claude_code
-    fi
-    if (( install_codex )); then
-      install_codex
-    fi
-    if (( install_gemini )); then
-      install_gemini_cli
-    fi
-    if (( install_opencode )); then
-      install_opencode
-    fi
+    (( install_claude )) && install_claude_code
+    (( install_codex )) && install_codex
+    (( install_gemini )) && install_gemini_cli
+    (( install_opencode )) && install_opencode
   else
     say "Skipped all optional coding-agent installs."
   fi
@@ -474,27 +608,24 @@ main() {
     say "Skipping remote-access setup because cloudflared could not be installed automatically."
   fi
 
-  if login_passiveagents && start_passiveagents; then
-    setup_allowlisted_folders
-    say "Done!"
+  # (( install_claude )) && login_claude_code
+  # (( install_codex )) && login_codex
+  # (( install_gemini )) && login_gemini_cli
+  # (( install_opencode )) && login_opencode
+
+  local login_ok=0
+  local start_ok=0
+
+  if login_passiveagents; then
+    login_ok=1
+    if start_passiveagents; then
+      start_ok=1
+      setup_allowlisted_folders
+      say "Done!"
+    fi
   fi
 
-  if (( install_claude || install_codex || install_gemini || install_opencode )); then
-    say ""
-    say "To log in to your coding agents, open a new terminal and run:"
-    if (( install_claude )); then
-      say "  Claude Code:  Run claude command in terminal and then run /login"
-    fi
-    if (( install_codex )); then
-      say "  Codex:        codex login"
-    fi
-    if (( install_gemini )); then
-      say "  Gemini CLI:   Run gemini command in terminal and then run /auth"
-    fi
-    if (( install_opencode )); then
-      say "  OpenCode:     opencode auth login"
-    fi
-  fi
+  print_next_steps "$login_ok" "$start_ok"
 }
 
 main "$@"
